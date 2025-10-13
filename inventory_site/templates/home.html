@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Inventory</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    :root {
+      --bg: #fff;
+      --fg: #222;
+      --border: #ccc;
+      --header-bg: #f5f5f5;
+      --hover: #f0f8ff;
+      --accent: #1976d2;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+    }
+
+    header {
+      padding: 12px 16px;
+      background: var(--header-bg);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    header h1 {
+      margin: 0 0 8px;
+      font-size: 20px;
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .toolbar a,
+    .toolbar button {
+      border: 1px solid var(--border);
+      background: #fff;
+      padding: 6px 10px;
+      border-radius: 4px;
+      text-decoration: none;
+      color: var(--fg);
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    .toolbar a:hover,
+    .toolbar button:hover {
+      border-color: var(--accent);
+    }
+
+    .controls {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    input[type="search"], select {
+      padding: 6px 8px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-size: 14px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+    }
+
+    thead {
+      background: var(--header-bg);
+      position: sticky;
+      top: 110px;
+      z-index: 5;
+    }
+
+    th, td {
+      border: 1px solid var(--border);
+      padding: 6px 8px;
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    th {
+      cursor: pointer;
+    }
+
+    th.sort-asc::after {
+      content: " ▲";
+      color: var(--accent);
+    }
+
+    th.sort-desc::after {
+      content: " ▼";
+      color: var(--accent);
+    }
+
+    tbody tr:nth-child(even) {
+      background: #fafafa;
+    }
+
+    tbody tr:hover {
+      background: var(--hover);
+    }
+
+    .info {
+      margin: 8px 0;
+      font-size: 13px;
+      color: #666;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Inventory</h1>
+
+    <div class="toolbar">
+      <a href="/download_inventory">Download CSV</a>
+      <a href="/download_log">Download Log</a>
+      <a href="/table" target="_blank" title="Raw JSON">View JSON</a>
+      <button id="copy-json">Copy visible as JSON</button>
+    </div>
+
+    <div class="controls">
+      <label>
+        Filter:
+        <input id="search" type="search" placeholder="Search…">
+      </label>
+      <label>
+        Column:
+        <select id="column">
+          <option value="">All</option>
+          {% if rows and rows[0] %}
+            {% for k in rows[0].keys() %}
+              <option value="{{ k }}">{{ k }}</option>
+            {% endfor %}
+          {% endif %}
+        </select>
+      </label>
+    </div>
+    <div class="info" id="info"></div>
+  </header>
+
+  <main>
+    <table id="inv">
+      <thead>
+        <tr>
+          {% if rows and rows[0] %}
+            {% for k in rows[0].keys() %}
+              <th data-key="{{ k }}">{{ k }}</th>
+            {% endfor %}
+          {% else %}
+            <th>No data</th>
+          {% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            {% for v in row.values() %}
+              <td>{{ v }}</td>
+            {% endfor %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </main>
+
+  <script>
+    const table = document.getElementById('inv');
+    const thead = table.tHead;
+    const tbody = table.tBodies[0];
+    const searchInput = document.getElementById('search');
+    const columnSelect = document.getElementById('column');
+    const info = document.getElementById('info');
+    const copyBtn = document.getElementById('copy-json');
+
+    const keys = [...thead.rows[0].cells].map(th => th.dataset.key);
+    let data = [...tbody.rows].map(tr => {
+      let obj = {};
+      [...tr.cells].forEach((td, i) => obj[keys[i]] = td.textContent.trim());
+      return obj;
+    });
+
+    let sortState = { key: null, dir: 1 };
+
+    function render(rows) {
+      tbody.innerHTML = "";
+      rows.forEach(obj => {
+        const tr = document.createElement('tr');
+        keys.forEach(k => {
+          const td = document.createElement('td');
+          td.textContent = obj[k] || "";
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+      info.textContent = `${rows.length} shown of ${data.length}`;
+    }
+
+    function normalize(v) {
+      return (v || "").toString().toLowerCase();
+    }
+
+    function filter() {
+      const needle = normalize(searchInput.value);
+      const col = columnSelect.value;
+      let out = data.filter(obj => {
+        if (!needle) return true;
+        if (col) return normalize(obj[col]).includes(needle);
+        return keys.some(k => normalize(obj[k]).includes(needle));
+      });
+      if (sortState.key) {
+        out.sort(compare(sortState.key, sortState.dir));
+      }
+      render(out);
+    }
+
+    function compare(key, dir) {
+      return (a, b) => {
+        const av = a[key] || "";
+        const bv = b[key] || "";
+        const an = parseFloat(av);
+        const bn = parseFloat(bv);
+        if (!isNaN(an) && !isNaN(bn)) return (an - bn) * dir;
+        return av.localeCompare(bv) * dir;
+      };
+    }
+
+    [...thead.rows[0].cells].forEach(th => {
+      th.addEventListener('click', () => {
+        const key = th.dataset.key;
+        sortState.dir = sortState.key === key ? -sortState.dir : 1;
+        sortState.key = key;
+        let out = [...tbody.rows].map(tr => {
+          let obj = {};
+          [...tr.cells].forEach((td, i) => obj[keys[i]] = td.textContent.trim());
+          return obj;
+        });
+        out.sort(compare(key, sortState.dir));
+        render(out);
+        [...thead.rows[0].cells].forEach(c => c.classList.remove('sort-asc', 'sort-desc'));
+        th.classList.add(sortState.dir === 1 ? 'sort-asc' : 'sort-desc');
+      });
+    });
+
+    searchInput.addEventListener('input', filter);
+    columnSelect.addEventListener('change', filter);
+
+    copyBtn.addEventListener('click', () => {
+      const visible = [...tbody.rows].map(tr => {
+        const obj = {};
+        [...tr.cells].forEach((td, i) => obj[keys[i]] = td.textContent.trim());
+        return obj;
+      });
+      const txt = JSON.stringify(visible, null, 2);
+      navigator.clipboard.writeText(txt).then(() => {
+        copyBtn.textContent = "Copied!";
+        setTimeout(() => (copyBtn.textContent = "Copy visible as JSON"), 1200);
+      });
+    });
+
+    render(data);
+  </script>
+</body>
+</html>
