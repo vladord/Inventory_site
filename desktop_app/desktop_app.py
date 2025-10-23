@@ -48,7 +48,7 @@ class App(ctk.CTk):
             data = {"user": user, "id": line, "action": "from_stock", "api_user": "desktop_app"}
             try:
                 patch_request = requests.patch(self.database_ip, json=data)
-                if patch_request != 200:
+                if patch_request.status_code != 200:
                     self.error_window(f"Couldn't change row №{i} \n error code {patch_request} \n {patch_request.json()}")
             except Exception as e:
                 self.error_window(f"Check if site is turned on")
